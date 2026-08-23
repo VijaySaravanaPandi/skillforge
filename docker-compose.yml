@@ -1,9 +1,9 @@
 version: '3.9'
 
 services:
-  # ── MongoDB ────────────────────────────────────────────────────────────────
+  # ── MongoDB Database ────────────────────────────────────────────────────────
   mongo:
-    image: mongo:7
+    image: mongo:7.0
     container_name: skillforge-mongo
     restart: unless-stopped
     ports:
@@ -12,30 +12,13 @@ services:
       - mongo-data:/data/db
     networks:
       - skillforge-net
+    healthcheck:
+      test: ['CMD', 'mongosh', '--eval', 'db.adminCommand("ping")']
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
-  # ── Gateway Service ────────────────────────────────────────────────────────
-  gateway:
-    build:
-      context: ./gateway-service
-      dockerfile: Dockerfile
-    container_name: skillforge-gateway
-    restart: unless-stopped
-    ports:
-      - '4000:4000'
-    environment:
-      - NODE_ENV=production
-      - PORT=4000
-      - JWT_SECRET=${JWT_SECRET}
-      - CORE_SERVICE_URL=http://core:5001
-      - MATCHING_SERVICE_URL=http://matching:8000
-    depends_on:
-      - mongo
-      - core
-      - matching
-    networks:
-      - skillforge-net
-
-  # ── Core Service ───────────────────────────────────────────────────────────
+  # ── Node.js Core Service ───────────────────────────────────────────────────
   core:
     build:
       context: ./core-service
@@ -48,13 +31,13 @@ services:
       - NODE_ENV=production
       - PORT=5001
       - MONGO_URI=mongodb://mongo:27017/skillforge
-      - JWT_SECRET=${JWT_SECRET}
     depends_on:
-      - mongo
+      mongo:
+        condition: service_healthy
     networks:
       - skillforge-net
 
-  # ── Matching Service ───────────────────────────────────────────────────────
+  # ── Python FastAPI AI Matching Service ─────────────────────────────────────
   matching:
     build:
       context: ./matching-service
@@ -64,13 +47,39 @@ services:
     expose:
       - '8000'
     environment:
+      - PORT=8000
       - MONGO_URI=mongodb://mongo:27017/skillforge_matching
+      - MODEL_NAME=all-MiniLM-L6-v2
     depends_on:
-      - mongo
+      mongo:
+        condition: service_healthy
     networks:
       - skillforge-net
 
-  # ── React Client ───────────────────────────────────────────────────────────
+  # ── Node.js API Gateway & Auth Service ─────────────────────────────────────
+  gateway:
+    build:
+      context: ./gateway-service
+      dockerfile: Dockerfile
+    container_name: skillforge-gateway
+    restart: unless-stopped
+    ports:
+      - '4000:4000'
+    environment:
+      - NODE_ENV=production
+      - PORT=4000
+      - JWT_SECRET=skillforge_jwt_secret_production_key_2026
+      - JWT_EXPIRES_IN=7d
+      - CORE_SERVICE_URL=http://core:5001
+      - MATCHING_SERVICE_URL=http://matching:8000
+      - MONGO_URI=mongodb://mongo:27017/skillforge
+    depends_on:
+      - core
+      - matching
+    networks:
+      - skillforge-net
+
+  # ── React + Tailwind Client ────────────────────────────────────────────────
   client:
     build:
       context: ./client
@@ -86,6 +95,7 @@ services:
 
 volumes:
   mongo-data:
+    driver: local
 
 networks:
   skillforge-net:
