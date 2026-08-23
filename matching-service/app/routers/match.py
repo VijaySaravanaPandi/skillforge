@@ -8,6 +8,7 @@ import numpy as np
 
 from app.models.schemas import MatchRequest, MatchResponse, MatchResult
 from app.services.embedding import EmbeddingService
+from app.services.cache import get_or_compute_embeddings
 
 router = APIRouter()
 
@@ -39,9 +40,9 @@ async def score_match(payload: MatchRequest):
         for f in payload.freelancers
     ]
 
-    # Encode job + all profiles in a single batch call (efficient)
+    # Encode job + all profiles (cache-aware: cache hits skip model inference)
     all_texts = [job_text] + profile_texts
-    all_embeddings = embedding_svc.encode(all_texts)
+    all_embeddings = await get_or_compute_embeddings(all_texts, embedding_svc)
 
     job_embedding: np.ndarray = all_embeddings[0]
     profile_embeddings: List[np.ndarray] = all_embeddings[1:]
