@@ -1,0 +1,92 @@
+version: '3.9'
+
+services:
+  # ── MongoDB ────────────────────────────────────────────────────────────────
+  mongo:
+    image: mongo:7
+    container_name: skillforge-mongo
+    restart: unless-stopped
+    ports:
+      - '27017:27017'
+    volumes:
+      - mongo-data:/data/db
+    networks:
+      - skillforge-net
+
+  # ── Gateway Service ────────────────────────────────────────────────────────
+  gateway:
+    build:
+      context: ./gateway-service
+      dockerfile: Dockerfile
+    container_name: skillforge-gateway
+    restart: unless-stopped
+    ports:
+      - '4000:4000'
+    environment:
+      - NODE_ENV=production
+      - PORT=4000
+      - JWT_SECRET=${JWT_SECRET}
+      - CORE_SERVICE_URL=http://core:5001
+      - MATCHING_SERVICE_URL=http://matching:8000
+    depends_on:
+      - mongo
+      - core
+      - matching
+    networks:
+      - skillforge-net
+
+  # ── Core Service ───────────────────────────────────────────────────────────
+  core:
+    build:
+      context: ./core-service
+      dockerfile: Dockerfile
+    container_name: skillforge-core
+    restart: unless-stopped
+    expose:
+      - '5001'
+    environment:
+      - NODE_ENV=production
+      - PORT=5001
+      - MONGO_URI=mongodb://mongo:27017/skillforge
+      - JWT_SECRET=${JWT_SECRET}
+    depends_on:
+      - mongo
+    networks:
+      - skillforge-net
+
+  # ── Matching Service ───────────────────────────────────────────────────────
+  matching:
+    build:
+      context: ./matching-service
+      dockerfile: Dockerfile
+    container_name: skillforge-matching
+    restart: unless-stopped
+    expose:
+      - '8000'
+    environment:
+      - MONGO_URI=mongodb://mongo:27017/skillforge_matching
+    depends_on:
+      - mongo
+    networks:
+      - skillforge-net
+
+  # ── React Client ───────────────────────────────────────────────────────────
+  client:
+    build:
+      context: ./client
+      dockerfile: Dockerfile
+    container_name: skillforge-client
+    restart: unless-stopped
+    ports:
+      - '3000:80'
+    depends_on:
+      - gateway
+    networks:
+      - skillforge-net
+
+volumes:
+  mongo-data:
+
+networks:
+  skillforge-net:
+    driver: bridge
